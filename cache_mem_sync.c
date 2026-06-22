@@ -180,14 +180,12 @@ static long cache_mem_ioctl(struct file *file, unsigned int cmd, unsigned long a
             pr_info("cache_mem_sync: page_idx=%u page_off=%u PAGE_SIZE=%u chunk=%u remaining=%u\n",
                     page_idx, page_off, (unsigned int)PAGE_SIZE, chunk, remaining);
 
-            void *kaddr = kmap_atomic(mapping.pages[page_idx]);
-            void *vaddr = (uint8_t *)kaddr + page_off;
-            dma_addr_t dma = dma_map_single(dev, vaddr, chunk,
-                                           (cmd == CACHE_MEM_SYNC_TO_DEVICE) ? DMA_TO_DEVICE : DMA_FROM_DEVICE);
+            struct page *page = mapping.pages[page_idx];
+            dma_addr_t dma = dma_map_page(dev, page, page_off, chunk,
+                                         (cmd == CACHE_MEM_SYNC_TO_DEVICE) ? DMA_TO_DEVICE : DMA_FROM_DEVICE);
             if (dma_mapping_error(dev, dma)) {
-                pr_err("cache_mem_sync: dma_map_single failed page_idx=%u chunk=%u vaddr=%p dma=%pad\n",
-                       page_idx, chunk, vaddr, &dma);
-                kunmap_atomic(kaddr);
+                pr_err("cache_mem_sync: dma_map_page failed page_idx=%u page=%p page_off=%u chunk=%u dma=%pad\n",
+                       page_idx, page, page_off, chunk, &dma);
                 ret = -EIO;
                 break;
             }
@@ -197,8 +195,7 @@ static long cache_mem_ioctl(struct file *file, unsigned int cmd, unsigned long a
             else
                 dma_sync_single_for_cpu(dev, dma, chunk, DMA_FROM_DEVICE);
 
-            dma_unmap_single(dev, dma, chunk, (cmd == CACHE_MEM_SYNC_TO_DEVICE) ? DMA_TO_DEVICE : DMA_FROM_DEVICE);
-            kunmap_atomic(kaddr);
+            dma_unmap_page(dev, dma, chunk, (cmd == CACHE_MEM_SYNC_TO_DEVICE) ? DMA_TO_DEVICE : DMA_FROM_DEVICE);
 
             remaining -= chunk;
 
