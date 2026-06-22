@@ -27,7 +27,7 @@ struct cache_mem_mapping {
 
 static struct cache_mem_mapping mapping;
 static struct miscdevice cms_misc;
-static char dev_name[32] = "cache_mem_sync";
+static char cms_dev_name[32] = "cache_mem_sync";
 static DEFINE_MUTEX(mapping_lock);
 
 static int ensure_unregistered_locked(void)
@@ -346,7 +346,7 @@ static int __init cache_mem_init(void)
 
     /* set misc device name (persist in dev_name) */
     cms_misc.minor = MISC_DYNAMIC_MINOR;
-    cms_misc.name = dev_name;
+    cms_misc.name = cms_dev_name;
     cms_misc.fops = &cms_fops;
 
     ret = misc_register(&cms_misc);
@@ -355,7 +355,7 @@ static int __init cache_mem_init(void)
         return ret;
     }
 
-    pr_info("cache_mem_sync: loaded, device /dev/%s\n", dev_name);
+    pr_info("cache_mem_sync: loaded, device /dev/%s\n", cms_dev_name);
     return 0;
 }
 
