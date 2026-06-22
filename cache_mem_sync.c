@@ -203,10 +203,11 @@ static long cache_mem_ioctl(struct file *file, unsigned int cmd, unsigned long a
                 unsigned long end = start + chunk;
 
                 if (cmd == CACHE_MEM_SYNC_TO_DEVICE) {
-                    flush_dcache_range(start, end);
+                    /* use architecture helper if available */
+                    __flush_dcache_area((void *)start, chunk);
                 } else {
                     /* Invalidate CPU dcache so subsequent userspace reads see device writes */
-                    invalidate_dcache_range(start, end);
+                    __invalidate_dcache_area((void *)start, chunk);
                 }
 
                 kunmap_atomic(kaddr);
