@@ -47,8 +47,6 @@ static int ensure_unregistered_locked(void)
             (unsigned long long)(info.freeram * (PAGE_SIZE / 1024ULL / 1024ULL)));
 
     for (i = 0; i < mapping.npages; ++i) {
-        if (mapping.dma_addrs && mapping.dma_addrs[i])
-            dma_unmap_page(dev, mapping.dma_addrs[i], PAGE_SIZE, DMA_BIDIRECTIONAL);
         if (mapping.pages && mapping.pages[i])
             put_page(mapping.pages[i]);
     }
@@ -109,38 +107,15 @@ static long cache_mem_ioctl(struct file *file, unsigned int cmd, unsigned long a
             break;
         }
 
-        dma_addrs = kcalloc(npages, sizeof(dma_addr_t), GFP_KERNEL);
-        if (!dma_addrs) {
-            for (i = 0; i < npages; ++i)
-                put_page(pages[i]);
-            kfree(pages);
-            ret = -ENOMEM;
-            break;
-        }
-
-        for (i = 0; i < npages; ++i) {
-            dma_addrs[i] = dma_map_page(dev, pages[i], 0, PAGE_SIZE, DMA_BIDIRECTIONAL);
-            if (dma_mapping_error(dev, dma_addrs[i]))
-                break;
-        }
-        if (i != npages) {
-            /* unmap and free already mapped pages */
-            unsigned int j;
-            for (j = 0; j < i; ++j)
-                dma_unmap_page(dev, dma_addrs[j], PAGE_SIZE, DMA_BIDIRECTIONAL);
-            for (j = 0; j < npages; ++j)
-                put_page(pages[j]);
-            kfree(dma_addrs);
-            kfree(pages);
-            ret = -EIO;
-            break;
-        }
+        /* We'll perform DMA mapping on-demand during sync operations using
+         * a kmap + dma_map_single/dma_unmap_single sequence. Avoid pre-mapping
+         * pages here to reduce complexity and platform-specific issues. */
 
         /* if a mapping already existed, teardown first */
         ensure_unregistered_locked();
 
         mapping.pages = pages;
-        mapping.dma_addrs = dma_addrs;
+        mapping.dma_addrs = NULL;
         mapping.user_addr = (unsigned long)r.user_addr;
         mapping.length = r.length;
         mapping.npages = npages;
@@ -194,12 +169,22 @@ static long cache_mem_ioctl(struct file *file, unsigned int cmd, unsigned long a
 
         while (remaining) {
             chunk = min((unsigned int)(PAGE_SIZE - page_off), remaining);
-            dma_addr_t dma = mapping.dma_addrs[page_idx] + page_off;
-            if (cmd == CACHE_MEM_SYNC_TO_DEVICE) {
-                dma_sync_single_for_device(dev, dma, chunk, DMA_TO_DEVICE);
-            } else {
-                dma_sync_single_for_cpu(dev, dma, chunk, DMA_FROM_DEVICE);
+            void *kaddr = kmap_atomic(mapping.pages[page_idx]);
+            void *vaddr = (uint8_t *)kaddr + page_off;
+            dma_addr_t dma = dma_map_single(dev, vaddr, chunk, (cmd == CACHE_MEM_SYNC_TO_DEVICE) ? DMA_TO_DEVICE : DMA_FROM_DEVICE);
+            if (dma_mapping_error(dev, dma)) {
+                kunmap_atomic(kaddr);
+                ret = -EIO;
+                break;
             }
+
+            if (cmd == CACHE_MEM_SYNC_TO_DEVICE)
+                dma_sync_single_for_device(dev, dma, chunk, DMA_TO_DEVICE);
+            else
+                dma_sync_single_for_cpu(dev, dma, chunk, DMA_FROM_DEVICE);
+
+            dma_unmap_single(dev, dma, chunk, (cmd == CACHE_MEM_SYNC_TO_DEVICE) ? DMA_TO_DEVICE : DMA_FROM_DEVICE);
+            kunmap_atomic(kaddr);
 
             remaining -= chunk;
 
