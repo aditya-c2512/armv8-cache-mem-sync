@@ -11,6 +11,14 @@
 #include <linux/highmem.h>
 #include <linux/dma-mapping.h>
 #include <asm/cacheflush.h>
+
+/* Some kernels expose architecture helpers with different names; declare
+ * the common internal helpers we may call as a fallback. These are
+ * present on many ARM kernels. Declaring them avoids implicit-declaration
+ * compile errors; if a symbol is missing at link/load time the module
+ * will fail to load which indicates the kernel lacks the helper. */
+extern void __flush_dcache_area(void *addr, size_t size);
+extern void __invalidate_dcache_area(void *addr, size_t size);
 #include <linux/mutex.h>
 #include <linux/sysinfo.h>
 
