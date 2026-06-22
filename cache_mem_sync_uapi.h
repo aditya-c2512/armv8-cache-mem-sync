@@ -9,6 +9,7 @@
 #include <sys/ioctl.h>
 typedef uint64_t __u64;
 typedef uint32_t __u32;
+typedef uint8_t __u8;
 #endif
 
 #define CACHE_MEM_SYNC_IOC_MAGIC 'c'
