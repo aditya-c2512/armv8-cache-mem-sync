@@ -1,0 +1,30 @@
+# Kernel/module build artifacts
+*.ko
+*.o
+*.mod.c
+*.mod
+*.symvers
+*.order
+*.cmd
+.tmp_versions/
+Module.symvers
+
+# Build directories
+build/
+out/
+
+# Test binaries
+test_cache_mem_sync
+test_cache_mem_sync.o
+cache_mem_sync.ko
+cache_mem_sync.o
+
+# Editors / OS
+*~
+*.swp
+.DS_Store
+.vscode/
+.idea/
+
+# Ignore CI config dir as requested
+.github/
