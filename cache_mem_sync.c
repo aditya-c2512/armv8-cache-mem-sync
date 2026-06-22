@@ -173,6 +173,8 @@ static long cache_mem_ioctl(struct file *file, unsigned int cmd, unsigned long a
             void *vaddr = (uint8_t *)kaddr + page_off;
             dma_addr_t dma = dma_map_single(dev, vaddr, chunk, (cmd == CACHE_MEM_SYNC_TO_DEVICE) ? DMA_TO_DEVICE : DMA_FROM_DEVICE);
             if (dma_mapping_error(dev, dma)) {
+                pr_err("cache_mem_sync: dma_map_single failed page_idx=%u chunk=%u vaddr=%p dma=%pad\n",
+                       page_idx, chunk, vaddr, &dma);
                 kunmap_atomic(kaddr);
                 ret = -EIO;
                 break;
@@ -198,6 +200,11 @@ static long cache_mem_ioctl(struct file *file, unsigned int cmd, unsigned long a
         pr_info("cache_mem_sync: %s complete offset=%llu len=%u\n",
                 (cmd == CACHE_MEM_SYNC_TO_DEVICE) ? "SYNC_TO_DEVICE" : "SYNC_FROM_DEVICE",
                 (unsigned long long)range.offset, range.length);
+
+        if (ret)
+            pr_err("cache_mem_sync: ioctl operation returned %d\n", ret);
+        else
+            pr_info("cache_mem_sync: ioctl operation completed successfully\n");
 
         break;
     }
@@ -305,6 +312,7 @@ static long cache_mem_ioctl(struct file *file, unsigned int cmd, unsigned long a
     }
 
     mutex_unlock(&mapping_lock);
+    pr_info("cache_mem_sync: returning ioctl result %d\n", ret);
     return ret;
 }
 
