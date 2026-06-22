@@ -10,6 +10,7 @@
 #include <linux/mm.h>
 #include <linux/highmem.h>
 #include <linux/dma-mapping.h>
+#include <asm/cacheflush.h>
 #include <linux/mutex.h>
 #include <linux/sysinfo.h>
 
@@ -184,18 +185,31 @@ static long cache_mem_ioctl(struct file *file, unsigned int cmd, unsigned long a
             dma_addr_t dma = dma_map_page(dev, page, page_off, chunk,
                                          (cmd == CACHE_MEM_SYNC_TO_DEVICE) ? DMA_TO_DEVICE : DMA_FROM_DEVICE);
             if (dma_mapping_error(dev, dma)) {
-                pr_err("cache_mem_sync: dma_map_page failed page_idx=%u page=%p page_off=%u chunk=%u dma=%pad\n",
-                       page_idx, page, page_off, chunk, &dma);
-                ret = -EIO;
-                break;
+                pr_warn("cache_mem_sync: dma_map_page failed page_idx=%u page=%p page_off=%u chunk=%u dma=%pad; falling back to kernel dcache ops\n",
+                        page_idx, page, page_off, chunk, &dma);
+
+                /* Fallback: perform kernel cache maintenance directly on the kmap'd range. */
+                void *kaddr = kmap_atomic(page);
+                void *vaddr = (uint8_t *)kaddr + page_off;
+                unsigned long start = (unsigned long)vaddr;
+                unsigned long end = start + chunk;
+
+                if (cmd == CACHE_MEM_SYNC_TO_DEVICE) {
+                    flush_dcache_range(start, end);
+                } else {
+                    /* Invalidate CPU dcache so subsequent userspace reads see device writes */
+                    invalidate_dcache_range(start, end);
+                }
+
+                kunmap_atomic(kaddr);
+            } else {
+                if (cmd == CACHE_MEM_SYNC_TO_DEVICE)
+                    dma_sync_single_for_device(dev, dma, chunk, DMA_TO_DEVICE);
+                else
+                    dma_sync_single_for_cpu(dev, dma, chunk, DMA_FROM_DEVICE);
+
+                dma_unmap_page(dev, dma, chunk, (cmd == CACHE_MEM_SYNC_TO_DEVICE) ? DMA_TO_DEVICE : DMA_FROM_DEVICE);
             }
-
-            if (cmd == CACHE_MEM_SYNC_TO_DEVICE)
-                dma_sync_single_for_device(dev, dma, chunk, DMA_TO_DEVICE);
-            else
-                dma_sync_single_for_cpu(dev, dma, chunk, DMA_FROM_DEVICE);
-
-            dma_unmap_page(dev, dma, chunk, (cmd == CACHE_MEM_SYNC_TO_DEVICE) ? DMA_TO_DEVICE : DMA_FROM_DEVICE);
 
             remaining -= chunk;
 
