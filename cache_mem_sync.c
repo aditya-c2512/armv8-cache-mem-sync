@@ -168,10 +168,22 @@ static long cache_mem_ioctl(struct file *file, unsigned int cmd, unsigned long a
                 (unsigned long long)range.offset, range.length, page_idx, page_off);
 
         while (remaining) {
-            chunk = min((unsigned int)(PAGE_SIZE - page_off), remaining);
+            /* ensure we never map past the current page boundary */
+            unsigned int max_chunk = (unsigned int)(PAGE_SIZE - page_off);
+            if (max_chunk == 0)
+                max_chunk = PAGE_SIZE;
+            chunk = min(max_chunk, remaining);
+            /* defensive cap: chunk must never be larger than PAGE_SIZE */
+            if (chunk > PAGE_SIZE)
+                chunk = PAGE_SIZE;
+
+            pr_info("cache_mem_sync: page_idx=%u page_off=%u PAGE_SIZE=%u chunk=%u remaining=%u\n",
+                    page_idx, page_off, (unsigned int)PAGE_SIZE, chunk, remaining);
+
             void *kaddr = kmap_atomic(mapping.pages[page_idx]);
             void *vaddr = (uint8_t *)kaddr + page_off;
-            dma_addr_t dma = dma_map_single(dev, vaddr, chunk, (cmd == CACHE_MEM_SYNC_TO_DEVICE) ? DMA_TO_DEVICE : DMA_FROM_DEVICE);
+            dma_addr_t dma = dma_map_single(dev, vaddr, chunk,
+                                           (cmd == CACHE_MEM_SYNC_TO_DEVICE) ? DMA_TO_DEVICE : DMA_FROM_DEVICE);
             if (dma_mapping_error(dev, dma)) {
                 pr_err("cache_mem_sync: dma_map_single failed page_idx=%u chunk=%u vaddr=%p dma=%pad\n",
                        page_idx, chunk, vaddr, &dma);
