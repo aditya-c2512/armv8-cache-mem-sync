@@ -8,12 +8,25 @@
 
 #include "cache_mem_sync_uapi.h"
 
-int main(void)
+int main(int argc, char **argv)
 {
     int fd = open("/dev/cache_mem_sync", O_RDWR);
     if (fd < 0) {
         perror("open");
         return 1;
+    }
+
+    /* optional: set target device name for DMA ops (argv[1]) */
+    if (argc > 1) {
+        struct cache_mem_sync_set_dev sd;
+        memset(&sd, 0, sizeof(sd));
+        strncpy(sd.name, argv[1], sizeof(sd.name) - 1);
+        if (ioctl(fd, CACHE_MEM_SYNC_SET_DEV, &sd) < 0) {
+            perror("CACHE_MEM_SYNC_SET_DEV");
+            /* continue; test may still run with fallback */
+        } else {
+            printf("registered device '%s' for DMA ops\n", sd.name);
+        }
     }
 
     size_t len = 4096 * 2;

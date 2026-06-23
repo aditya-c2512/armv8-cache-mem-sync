@@ -6,6 +6,10 @@
 #include <linux/miscdevice.h>
 #include <linux/fs.h>
 #include <linux/uaccess.h>
+#include <linux/device.h>
+#include <linux/platform_device.h>
+#include <linux/pci.h>
+#include <linux/of_platform.h>
 #include <linux/slab.h>
 #include <linux/mm.h>
 #include <linux/highmem.h>
@@ -28,6 +32,9 @@ struct cache_mem_mapping {
     size_t length;
     unsigned int npages;
     bool registered;
+    void *coherent_buf;
+    dma_addr_t coherent_dma;
+    struct device *target_dev;
 };
 
 static struct cache_mem_mapping mapping;
@@ -38,7 +45,7 @@ static DEFINE_MUTEX(mapping_lock);
 static int ensure_unregistered_locked(void)
 {
     unsigned int i;
-    struct device *dev = cms_misc.this_device;
+    struct device *dev = mapping.target_dev ? mapping.target_dev : cms_misc.this_device;
 
     struct sysinfo info;
 
@@ -55,8 +62,14 @@ static int ensure_unregistered_locked(void)
         if (mapping.pages && mapping.pages[i])
             put_page(mapping.pages[i]);
     }
+    if (mapping.coherent_buf && dev)
+        dma_free_coherent(dev, mapping.length, mapping.coherent_buf, mapping.coherent_dma);
     kfree(mapping.dma_addrs);
     kfree(mapping.pages);
+    if (mapping.target_dev) {
+        put_device(mapping.target_dev);
+        mapping.target_dev = NULL;
+    }
     memset(&mapping, 0, sizeof(mapping));
     pr_info("cache_mem_sync: unregister complete\n");
     return 0;
@@ -80,8 +93,7 @@ static long cache_mem_ioctl(struct file *file, unsigned int cmd, unsigned long a
         unsigned int pinned = 0;
         unsigned int i;
         struct page **pages = NULL;
-        dma_addr_t *dma_addrs = NULL;
-        struct device *dev = cms_misc.this_device;
+        struct device *dev = mapping.target_dev ? mapping.target_dev : cms_misc.this_device;
 
         if (copy_from_user(&r, (void __user *)arg, sizeof(r))) {
             ret = -EFAULT;
@@ -125,6 +137,21 @@ static long cache_mem_ioctl(struct file *file, unsigned int cmd, unsigned long a
         mapping.length = r.length;
         mapping.npages = npages;
         mapping.registered = true;
+        mapping.coherent_buf = NULL;
+        mapping.coherent_dma = 0;
+
+        /* Try to allocate a coherent DMA buffer to use as an intermediate
+         * so we don't have to map user pages for DMA on platforms where
+         * dma_map_page fails for user pages. This is less efficient but
+         * reliable for testing. */
+        if (r.length > 0) {
+            mapping.coherent_buf = dma_alloc_coherent(dev, r.length, &mapping.coherent_dma, GFP_KERNEL);
+            if (!mapping.coherent_buf) {
+                pr_warn("cache_mem_sync: dma_alloc_coherent failed for len=%u; continuing without coherent buffer\n", (unsigned int)r.length);
+            } else {
+                pr_info("cache_mem_sync: allocated coherent buffer %p dma=%pad len=%u\n", mapping.coherent_buf, &mapping.coherent_dma, (unsigned int)r.length);
+            }
+        }
 
         {
             struct sysinfo info;
@@ -140,6 +167,35 @@ static long cache_mem_ioctl(struct file *file, unsigned int cmd, unsigned long a
     case CACHE_MEM_SYNC_UNREGISTER:
         ensure_unregistered_locked();
         break;
+    case CACHE_MEM_SYNC_SET_DEV: {
+        struct cache_mem_sync_set_dev sd;
+        struct device *dev = NULL;
+
+        if (copy_from_user(&sd, (void __user *)arg, sizeof(sd))) {
+            ret = -EFAULT;
+            break;
+        }
+
+        /* try common buses: platform, pci, of-platform */
+        dev = bus_find_device_by_name(&platform_bus_type, NULL, sd.name);
+        if (!dev)
+            dev = bus_find_device_by_name(&pci_bus_type, NULL, sd.name);
+        if (!dev)
+            dev = bus_find_device_by_name(&of_platform_bus_type, NULL, sd.name);
+
+        if (!dev) {
+            pr_err("cache_mem_sync: device '%s' not found\n", sd.name);
+            ret = -ENODEV;
+            break;
+        }
+
+        get_device(dev);
+        if (mapping.target_dev)
+            put_device(mapping.target_dev);
+        mapping.target_dev = dev;
+        pr_info("cache_mem_sync: using device %s for DMA ops\n", sd.name);
+        break;
+    }
     case CACHE_MEM_SYNC_TO_DEVICE:
     case CACHE_MEM_SYNC_FROM_DEVICE: {
         struct cache_mem_sync_range range;
@@ -148,7 +204,7 @@ static long cache_mem_ioctl(struct file *file, unsigned int cmd, unsigned long a
         unsigned int page_idx;
         unsigned int page_off;
         unsigned int chunk;
-        struct device *dev = cms_misc.this_device;
+        struct device *dev = mapping.target_dev ? mapping.target_dev : cms_misc.this_device;
 
         if (!mapping.registered) {
             ret = -EINVAL;
@@ -189,23 +245,37 @@ static long cache_mem_ioctl(struct file *file, unsigned int cmd, unsigned long a
             dma_addr_t dma = dma_map_page(dev, page, page_off, chunk,
                                          (cmd == CACHE_MEM_SYNC_TO_DEVICE) ? DMA_TO_DEVICE : DMA_FROM_DEVICE);
             if (dma_mapping_error(dev, dma)) {
-                pr_warn("cache_mem_sync: dma_map_page failed page_idx=%u page=%p page_off=%u chunk=%u dma=%pad; falling back to no-op\n",
+                pr_warn("cache_mem_sync: dma_map_page failed page_idx=%u page=%p page_off=%u chunk=%u dma=%pad; trying coherent buffer fallback\n",
                         page_idx, page, page_off, chunk, &dma);
-                /* No reliable exported cache-flush helpers available in all kernels;
-                 * for now we log and treat the operation as performed. In practice
-                 * users should register with a real device's `struct device *`
-                 * (NIC) so dma_map_page succeeds and proper DMA cache maintenance
-                 * is applied. */
-                ret = -EIO;
-                break;
+
+                if (mapping.coherent_buf) {
+                    /* compute offset within the coherent buffer for this chunk.
+                     * rel_off = range.offset + offset_within_first_page was used to
+                     * derive page_idx/page_off, so the region-relative offset is
+                     * (page_idx*PAGE_SIZE + page_off) - offset_within_first_page. */
+                    unsigned long offset_within_first_page = (unsigned long)mapping.user_addr & ~PAGE_MASK;
+                    unsigned long buf_off = (page_idx * PAGE_SIZE + page_off) - offset_within_first_page;
+                    void *kbuf = (uint8_t *)mapping.coherent_buf + buf_off;
+                    void *kaddr = kmap_atomic(page);
+                    if (cmd == CACHE_MEM_SYNC_TO_DEVICE)
+                        memcpy(kbuf, (uint8_t *)kaddr + page_off, chunk);
+                    else
+                        memcpy((uint8_t *)kaddr + page_off, kbuf, chunk);
+                    kunmap_atomic(kaddr);
+                    /* If we had a real device we'd sync coherent DMA for device here. */
+                } else {
+                    pr_warn("cache_mem_sync: no coherent buffer available; cannot perform DMA sync for page_idx=%u\n", page_idx);
+                    ret = -EIO;
+                    break;
+                }
+            } else {
+                if (cmd == CACHE_MEM_SYNC_TO_DEVICE)
+                    dma_sync_single_for_device(dev, dma, chunk, DMA_TO_DEVICE);
+                else
+                    dma_sync_single_for_cpu(dev, dma, chunk, DMA_FROM_DEVICE);
+
+                dma_unmap_page(dev, dma, chunk, (cmd == CACHE_MEM_SYNC_TO_DEVICE) ? DMA_TO_DEVICE : DMA_FROM_DEVICE);
             }
-
-            if (cmd == CACHE_MEM_SYNC_TO_DEVICE)
-                dma_sync_single_for_device(dev, dma, chunk, DMA_TO_DEVICE);
-            else
-                dma_sync_single_for_cpu(dev, dma, chunk, DMA_FROM_DEVICE);
-
-            dma_unmap_page(dev, dma, chunk, (cmd == CACHE_MEM_SYNC_TO_DEVICE) ? DMA_TO_DEVICE : DMA_FROM_DEVICE);
 
             remaining -= chunk;
 

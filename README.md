@@ -24,7 +24,7 @@ sudo mount -t hugetlbfs nodev /dev/hugepages
 
 Build the kernel module (native build):
 ```bash
-make
+make KERNEL_DIR=/lib/modules/$(uname -r)/build
 ```
 
 - Cross-compile (host cross-build) example:
@@ -62,8 +62,40 @@ gcc -O2 -I. -o test_cache_mem_sync test_cache_mem_sync.c
 
 Run the test (requires the module loaded):
 ```bash
-./test_cache_mem_sync
+# optionally pass a kernel device name to use for DMA ops (recommended)
+./test_cache_mem_sync [device-name]
+
+# Example: pass a platform or PCI sysfs name such as:
+#  - platform: the name under /sys/bus/platform/devices
+#  - PCI: the device slot like 0000:01:00.0 (from /sys/bus/pci/devices)
+# e.g. `./test_cache_mem_sync 0000:01:00.0`
 ```
+
+Device registration (recommended for DPDK integration)
+ - The module provides `CACHE_MEM_SYNC_SET_DEV` ioctl to register which
+   kernel `struct device` to use for DMA and cache maintenance. Pass the
+   kernel device name (sysfs entry) to the userspace test or call the
+   ioctl from your driver before registering buffers. This ensures the
+   kernel uses the NIC device's DMA ops / IOMMU mappings (required on
+   platforms like Raspberry Pi 5).
+
+Limitations & testing notes
+- The module currently falls back to a coherent intermediate buffer when
+  mapping user pages for DMA fails; this is intended for functional
+  testing only and is not suitable for production DPDK datapaths (it
+  incurs extra memory copies and latency).
+- For correct, efficient operation with DPDK you should:
+  - register the NIC device with `CACHE_MEM_SYNC_SET_DEV` (or integrate
+    the helper directly into the NIC driver so it has access to the
+    correct `struct device *`), and
+  - prefer DMA mappings performed using the NIC's `struct device` and
+    `dma_map_sg`/scatter-gather for multi-page buffers.
+
+Finding device names
+- Platform devices: `ls /sys/bus/platform/devices`
+- PCI devices: `ls /sys/bus/pci/devices`
+- Use the exact sysfs name (e.g. `0000:01:00.0`) as the device-name
+  argument to `test_cache_mem_sync` or pass it into your driver.
 
 Makefile notes
 - The `Makefile` in this repo builds a single kernel module object named

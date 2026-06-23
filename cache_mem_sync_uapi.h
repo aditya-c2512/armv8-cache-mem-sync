@@ -30,11 +30,16 @@ struct cache_mem_sync_simulate {
     __u8 pattern;
 };
 
+struct cache_mem_sync_set_dev {
+    char name[64]; /* device name as in dev_name(&dev) or platform/pci device name */
+};
+
 #define CACHE_MEM_SYNC_REGISTER _IOW(CACHE_MEM_SYNC_IOC_MAGIC, 1, struct cache_mem_sync_register)
 #define CACHE_MEM_SYNC_UNREGISTER _IO(CACHE_MEM_SYNC_IOC_MAGIC, 2)
 #define CACHE_MEM_SYNC_TO_DEVICE _IOW(CACHE_MEM_SYNC_IOC_MAGIC, 3, struct cache_mem_sync_range)
 #define CACHE_MEM_SYNC_FROM_DEVICE _IOW(CACHE_MEM_SYNC_IOC_MAGIC, 4, struct cache_mem_sync_range)
 #define CACHE_MEM_SYNC_CHECKSUM _IOWR(CACHE_MEM_SYNC_IOC_MAGIC, 5, struct cache_mem_sync_range)
 #define CACHE_MEM_SYNC_SIMULATE_WRITE _IOW(CACHE_MEM_SYNC_IOC_MAGIC, 6, struct cache_mem_sync_simulate)
+#define CACHE_MEM_SYNC_SET_DEV _IOW(CACHE_MEM_SYNC_IOC_MAGIC, 7, struct cache_mem_sync_set_dev)
 
 #endif /* _CACHE_MEM_SYNC_UAPI_H */
