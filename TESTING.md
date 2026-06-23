@@ -24,7 +24,7 @@ The supplied test program `test_physical_write_proof` does the following:
 ## Build
 **On the target (RPi5):**
 
-```bash
+```shell
 # build kernel module
 make KERNEL_DIR=/lib/modules/$(uname -r)/build
 
@@ -36,7 +36,7 @@ gcc -O2 -I. -o test_simulate_write test_simulate_write.c
 **Run (recommended):**
 1. Load the module and (optionally) register the NIC device name for correct DMA ops:
 
-```bash
+```shell
 sudo insmod cache_mem_sync.ko
 # Optionally: choose a device name from /sys/bus/platform/devices
 # e.g. DEVICE_NAME=$(ls /sys/bus/platform/devices | head -n1)
@@ -45,7 +45,7 @@ sudo insmod cache_mem_sync.ko
 2. Run the proof test (as root) and pass the device name if you want the
 module to register the NIC for DMA ops (recommended):
 
-```bash
+```shell
 sudo ./test_physical_write_proof <device-name>
 # or without device argument: sudo ./test_physical_write_proof
 ```
@@ -72,7 +72,7 @@ use the module's `CACHE_MEM_SYNC_SIMULATE_WRITE` ioctl to simulate a device
 write. The simulation is done from the kernel and performs a write to the
 mapping's pages. Example:
 
-```bash
+```shell
 # Use test_simulate_write which exercises SIMULATE_WRITE
 sudo ./test_simulate_write <device-name>
 ```
@@ -86,7 +86,7 @@ verification.
 To show that the same sequence would fail without the module:
 
 1. Unload the module:
-```bash
+```shell
 sudo rmmod cache_mem_sync
 ```
 
@@ -125,7 +125,7 @@ int main(void) {
 Run the helper and note the printed PID and VADDR. In another root shell, compute
 the physical address and write a byte `0x55`:
 
-```bash
+```shell
 # replace PID and VADDR with printed values
 PID=<pid>
 VADDR=0x...   # printed vaddr
@@ -156,7 +156,7 @@ default to avoid accidental writes.
 
 Make it executable and run it from a root shell (or with `sudo`). Example:
 
-```bash
+```shell
 chmod +x scripts/write_phys.sh
 # interactive prompt
 ./scripts/write_phys.sh <PID> <VADDR>

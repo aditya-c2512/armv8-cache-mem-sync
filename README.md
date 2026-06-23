@@ -150,7 +150,7 @@ v
 
 **Install dependencies:**
 
-```bash
+```shell
 sudo apt install build-essential linux-headers-$(uname -r)
 ````
 
@@ -160,14 +160,14 @@ sudo apt install build-essential linux-headers-$(uname -r)
 
 - Clone the repository:
 
-```bash
+```shell
 git clone https://github.com/aditya-c2512/armv8-cache-mem-sync.git
 cd armv8-cache-mem-sync
 ```
 
 - Build the kernel module:
 
-```bash
+```shell
 make
 ```
 
@@ -183,13 +183,13 @@ cache_mem_sync.ko
 
 - Insert the module:
 
-```bash
+```shell
 sudo insmod cache_mem_sync.ko
 ```
 
 - Verify:
 
-```bash
+```shell
 dmesg | tail
 ```
 
@@ -205,17 +205,17 @@ cache_mem_sync: module loaded
 
 - Build the test program:
 
-```bash
+```shell
 gcc -O2 -I. -o test_simulate_write test_simulate_write.c
 ```
 
 - Find Platform/PCI Device name and pass to test application. (See "Device Discovery")
 - Run:
-```bash
+```shell
 sudo ./test_simulate_write [device_name]
 ```
 For example:
-```bash
+```shell
 sudo ./test_simulate_write 1f00100000.ethernet
 ```
 
@@ -235,7 +235,7 @@ using the following methods.
 
 ## Device Tree Search
 
-```bash
+```shell
 grep -R "cdns,gem" \
 /proc/device-tree \
 /sys/firmware/devicetree/base \
@@ -246,7 +246,7 @@ grep -R "cdns,gem" \
 
 For platform devices, find a DMA device using the bellow command:
 
-```bash
+```shell
 ls /sys/bus/platform/devices
 ```
 
@@ -254,7 +254,7 @@ ls /sys/bus/platform/devices
 
 For PCI-attached devices:
 
-```bash
+```shell
 ls /sys/bus/pci/devices
 ```
 
@@ -266,14 +266,14 @@ Example:
 
 Pass the device name to the userspace tester:
 
-```bash
+```shell
 sudo ./test_simulate_write <device-name>
 ```
 
 Example:
 
-```bash
-sudo ./test_simulate_write 0000:01:00.0
+```shell
+sudo ./test_simulate_write 1f00100000.ethernet
 ```
 
 ---
@@ -413,13 +413,13 @@ Restrict access to trusted applications.
 
 After loading, check permissions:
 
-```bash
+```shell
 ls -l /dev/cache_mem_sync
 ```
 
 Modify permissions if required:
 
-```bash
+```shell
 sudo chmod 660 /dev/cache_mem_sync
 ```
 
