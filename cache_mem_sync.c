@@ -176,12 +176,10 @@ static long cache_mem_ioctl(struct file *file, unsigned int cmd, unsigned long a
             break;
         }
 
-        /* try common buses: platform, pci, of-platform */
+        /* try common buses: platform, pci */
         dev = bus_find_device_by_name(&platform_bus_type, NULL, sd.name);
         if (!dev)
             dev = bus_find_device_by_name(&pci_bus_type, NULL, sd.name);
-        if (!dev)
-            dev = bus_find_device_by_name(&of_platform_bus_type, NULL, sd.name);
 
         if (!dev) {
             pr_err("cache_mem_sync: device '%s' not found\n", sd.name);
