@@ -5,7 +5,7 @@ CPU cache <-> device memory synchronization behavior on non-coherent platforms
 (like Raspberry Pi 5).
 
 ## Overview
-The supplied test program `test_prove_cache_sync` does the following:
+The supplied test program `test_physical_write_proof` does the following:
 - allocates a page-aligned userspace buffer and fills it with 0xAA
 - registers that region with `/dev/cache_mem_sync` if the module is loaded
 - obtains the physical address of the page via `/proc/<pid>/pagemap`
@@ -29,8 +29,8 @@ The supplied test program `test_prove_cache_sync` does the following:
 make KERNEL_DIR=/lib/modules/$(uname -r)/build
 
 # build tests
-gcc -O2 -I. -o test_prove_cache_sync test_prove_cache_sync.c
-gcc -O2 -I. -o test_cache_mem_sync test_cache_mem_sync.c
+gcc -O2 -I. -o test_physical_write_proof test_physical_write_proof.c
+gcc -O2 -I. -o test_simulate_write test_simulate_write.c
 ```
 
 **Run (recommended):**
@@ -46,8 +46,8 @@ sudo insmod cache_mem_sync.ko
 module to register the NIC for DMA ops (recommended):
 
 ```bash
-sudo ./test_prove_cache_sync <device-name>
-# or without device argument: sudo ./test_prove_cache_sync
+sudo ./test_physical_write_proof <device-name>
+# or without device argument: sudo ./test_physical_write_proof
 ```
 
 3. Observe output similar to:
@@ -73,8 +73,8 @@ write. The simulation is done from the kernel and performs a write to the
 mapping's pages. Example:
 
 ```bash
-# Use test_cache_mem_sync which exercises SIMULATE_WRITE
-sudo ./test_cache_mem_sync <device-name>
+# Use test_simulate_write which exercises SIMULATE_WRITE
+sudo ./test_simulate_write <device-name>
 ```
 
 This shows the same before/after behavior, but keep in mind the simulation
@@ -166,7 +166,7 @@ chmod +x scripts/write_phys.sh
 
 **Caveats:**
 - `/dev/mem` may be restricted on some kernels/distributions; if so use the
-  module's `SIMULATE_WRITE` ioctl or run the automated `test_prove_cache_sync`.
+  module's `SIMULATE_WRITE` ioctl or run the automated `test_physical_write_proof`.
 - Writing to `/dev/mem` is privileged and potentially dangerous; run on test
   hardware only.
 

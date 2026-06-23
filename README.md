@@ -1,13 +1,14 @@
 # ARMv8 Cache Memory Synchronisation Helper
+```
+.
+├── cache_mem_sync.c             # Kernel module implementation
+├── cache_mem_sync_uapi.h        # Userspace ioctl interface definition
+├── test_simulate_write.c        # Userspace test that exercises SIMULATE_WRITE
+├── test_physical_write_proof.c  # Proof test that writes via /dev/mem
+├── Makefile                     # Kernel module build file
+└── README.md
 
-A lightweight Linux kernel module for Raspberry Pi 5 that provides explicit
-cache ↔ memory synchronisation primitives for DMA non-coherent hardware.
-
-This project is designed to support **userspace DPDK poll-mode drivers (PMDs)**
-using hugepage-backed packet buffers where explicit cache ownership transfer is
-required between the CPU and DMA devices.
-
-The module exposes a userspace ioctl interface that allows a DPDK application
+```
 to request cache maintenance operations before and after DMA transactions.
 
 ---
@@ -79,10 +80,11 @@ ownership transitions.
 ```
 
 .
-├── cache_mem_sync.c          # Kernel module implementation
-├── cache_mem_sync_uapi.h     # Userspace ioctl interface definition
-├── test_cache_mem_sync.c     # Userspace test application
-├── Makefile                  # Kernel module build file
+├── cache_mem_sync.c             # Kernel module implementation
+├── cache_mem_sync_uapi.h        # Userspace ioctl interface definition
+├── test_simulate_write.c        # Userspace test that exercises SIMULATE_WRITE
+├── test_physical_write_proof.c  # Proof test that writes via /dev/mem
+├── Makefile                     # Kernel module build file
 └── README.md
 
 ```
@@ -204,17 +206,17 @@ cache_mem_sync: module loaded
 - Build the test program:
 
 ```bash
-gcc -O2 -I. -o test_cache_mem_sync test_cache_mem_sync.c
+gcc -O2 -I. -o test_simulate_write test_simulate_write.c
 ```
 
 - Find Platform/PCI Device name and pass to test application. (See "Device Discovery")
 - Run:
 ```bash
-sudo ./test_cache_mem_sync [device_name]
+sudo ./test_simulate_write [device_name]
 ```
-- For example:
+For example:
 ```bash
-sudo ./test_cache_mem_sync 1f00100000.ethernet
+sudo ./test_simulate_write 1f00100000.ethernet
 ```
 
 The application:
@@ -265,13 +267,13 @@ Example:
 Pass the device name to the userspace tester:
 
 ```bash
-sudo ./test_cache_mem_sync <device-name>
+sudo ./test_simulate_write <device-name>
 ```
 
 Example:
 
 ```bash
-sudo ./test_cache_mem_sync 0000:01:00.0
+sudo ./test_simulate_write 0000:01:00.0
 ```
 
 ---

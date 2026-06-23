@@ -1,3 +1,9 @@
+/*
+ * test_simulate_write.c
+ * Userspace test that exercises the kernel module's SIMULATE_WRITE ioctl
+ * to emulate a device DMA writing into a registered userspace buffer.
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

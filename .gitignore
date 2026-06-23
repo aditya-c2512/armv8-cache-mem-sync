@@ -14,8 +14,10 @@ build/
 out/
 
 # Test binaries
-test_cache_mem_sync
-test_cache_mem_sync.o
+test_simulate_write
+test_simulate_write.o
+test_physical_write_proof
+test_physical_write_proof.o
 cache_mem_sync.ko
 cache_mem_sync.o
 

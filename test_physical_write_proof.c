@@ -1,14 +1,11 @@
 /*
- * test_prove_cache_sync.c
+ * test_physical_write_proof.c
  * Demonstrate that device writes to the physical page behind a userspace
  * buffer are not visible to the CPU until a cache-from-device sync is
  * performed (when required by the platform).
  *
  * Usage: run as root (requires /dev/mem). Optionally pass a device-name
  * to register with the kernel helper for correct DMA ops.
- *
- * Example:
- *   sudo ./test_prove_cache_sync <device-name>
  */
 
 #include <stdio.h>
