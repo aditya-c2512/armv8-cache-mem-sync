@@ -10,15 +10,11 @@
 #include <linux/mm.h>
 #include <linux/highmem.h>
 #include <linux/dma-mapping.h>
-#include <asm/cacheflush.h>
-
-/* Some kernels expose architecture helpers with different names; declare
- * the common internal helpers we may call as a fallback. These are
- * present on many ARM kernels. Declaring them avoids implicit-declaration
- * compile errors; if a symbol is missing at link/load time the module
- * will fail to load which indicates the kernel lacks the helper. */
-extern void __flush_dcache_area(void *addr, size_t size);
-extern void __invalidate_dcache_area(void *addr, size_t size);
+/* Note: architecture-specific cache flush helpers are not reliably
+ * exported to modules across kernel versions. We avoid referencing
+ * non-exported symbols to keep the module buildable; when DMA mapping
+ * fails we emit a warning and fall back to a no-op. For production use
+ * bind to a real `struct device *` for the NIC and use its DMA ops. */
 #include <linux/mutex.h>
 #include <linux/sysinfo.h>
 
@@ -193,32 +189,23 @@ static long cache_mem_ioctl(struct file *file, unsigned int cmd, unsigned long a
             dma_addr_t dma = dma_map_page(dev, page, page_off, chunk,
                                          (cmd == CACHE_MEM_SYNC_TO_DEVICE) ? DMA_TO_DEVICE : DMA_FROM_DEVICE);
             if (dma_mapping_error(dev, dma)) {
-                pr_warn("cache_mem_sync: dma_map_page failed page_idx=%u page=%p page_off=%u chunk=%u dma=%pad; falling back to kernel dcache ops\n",
+                pr_warn("cache_mem_sync: dma_map_page failed page_idx=%u page=%p page_off=%u chunk=%u dma=%pad; falling back to no-op\n",
                         page_idx, page, page_off, chunk, &dma);
-
-                /* Fallback: perform kernel cache maintenance directly on the kmap'd range. */
-                void *kaddr = kmap_atomic(page);
-                void *vaddr = (uint8_t *)kaddr + page_off;
-                unsigned long start = (unsigned long)vaddr;
-                unsigned long end = start + chunk;
-
-                if (cmd == CACHE_MEM_SYNC_TO_DEVICE) {
-                    /* use architecture helper if available */
-                    __flush_dcache_area((void *)start, chunk);
-                } else {
-                    /* Invalidate CPU dcache so subsequent userspace reads see device writes */
-                    __invalidate_dcache_area((void *)start, chunk);
-                }
-
-                kunmap_atomic(kaddr);
-            } else {
-                if (cmd == CACHE_MEM_SYNC_TO_DEVICE)
-                    dma_sync_single_for_device(dev, dma, chunk, DMA_TO_DEVICE);
-                else
-                    dma_sync_single_for_cpu(dev, dma, chunk, DMA_FROM_DEVICE);
-
-                dma_unmap_page(dev, dma, chunk, (cmd == CACHE_MEM_SYNC_TO_DEVICE) ? DMA_TO_DEVICE : DMA_FROM_DEVICE);
+                /* No reliable exported cache-flush helpers available in all kernels;
+                 * for now we log and treat the operation as performed. In practice
+                 * users should register with a real device's `struct device *`
+                 * (NIC) so dma_map_page succeeds and proper DMA cache maintenance
+                 * is applied. */
+                ret = -EIO;
+                break;
             }
+
+            if (cmd == CACHE_MEM_SYNC_TO_DEVICE)
+                dma_sync_single_for_device(dev, dma, chunk, DMA_TO_DEVICE);
+            else
+                dma_sync_single_for_cpu(dev, dma, chunk, DMA_FROM_DEVICE);
+
+            dma_unmap_page(dev, dma, chunk, (cmd == CACHE_MEM_SYNC_TO_DEVICE) ? DMA_TO_DEVICE : DMA_FROM_DEVICE);
 
             remaining -= chunk;
 
