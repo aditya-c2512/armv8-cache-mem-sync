@@ -51,7 +51,7 @@ int main(int argc, char **argv)
     /* Sync to device (CPU -> device) */
     struct cache_mem_sync_range r = { .offset = 0, .length = (uint32_t)len };
 
-    /* Check checksum before cleaning */
+    /* Checksum before clean */
     struct cache_mem_sync_range cr = r;
     if (ioctl(fd, CACHE_MEM_SYNC_CHECKSUM, &cr) < 0) {
         perror("CACHE_MEM_SYNC_CHECKSUM before");
@@ -65,7 +65,7 @@ int main(int argc, char **argv)
         printf("SYNC_TO_DEVICE succeeded\n");
     }
 
-    /* Check checksum after cleaning */
+    /* Checksum after clean */
     cr = r;
     if (ioctl(fd, CACHE_MEM_SYNC_CHECKSUM, &cr) < 0) {
         perror("CACHE_MEM_SYNC_CHECKSUM after");

@@ -14,11 +14,8 @@
 #include <linux/mm.h>
 #include <linux/highmem.h>
 #include <linux/dma-mapping.h>
-/* Note: architecture-specific cache flush helpers are not reliably
- * exported to modules across kernel versions. We avoid referencing
- * non-exported symbols to keep the module buildable; when DMA mapping
- * fails we emit a warning and fall back to a no-op. For production use
- * bind to a real `struct device *` for the NIC and use its DMA ops. */
+/* Prefer a target device's DMA ops for mapping; coherent-buffer fallback
+ * is a test-only helper when direct mapping fails. */
 #include <linux/mutex.h>
 #include <linux/sysinfo.h>
 
@@ -124,9 +121,7 @@ static long cache_mem_ioctl(struct file *file, unsigned int cmd, unsigned long a
             break;
         }
 
-        /* We'll perform DMA mapping on-demand during sync operations using
-         * a kmap + dma_map_single/dma_unmap_single sequence. Avoid pre-mapping
-         * pages here to reduce complexity and platform-specific issues. */
+        /* Pin user pages now; DMA mapping is done on-demand during sync. */
 
         /* if a mapping already existed, teardown first */
         ensure_unregistered_locked();
@@ -140,10 +135,7 @@ static long cache_mem_ioctl(struct file *file, unsigned int cmd, unsigned long a
         mapping.coherent_buf = NULL;
         mapping.coherent_dma = 0;
 
-        /* Try to allocate a coherent DMA buffer to use as an intermediate
-         * so we don't have to map user pages for DMA on platforms where
-         * dma_map_page fails for user pages. This is less efficient but
-         * reliable for testing. */
+        /* Allocate a coherent DMA buffer as an intermediate for testing. */
         if (r.length > 0) {
             mapping.coherent_buf = dma_alloc_coherent(dev, r.length, &mapping.coherent_dma, GFP_KERNEL);
             if (!mapping.coherent_buf) {
@@ -223,11 +215,11 @@ static long cache_mem_ioctl(struct file *file, unsigned int cmd, unsigned long a
         page_off = rel_off % PAGE_SIZE;
 
         pr_info("cache_mem_sync: %s start offset=%llu len=%u start_page=%u start_page_off=%u\n",
-                (cmd == CACHE_MEM_SYNC_TO_DEVICE) ? "SYNC_TO_DEVICE" : "SYNC_FROM_DEVICE",
-                (unsigned long long)range.offset, range.length, page_idx, page_off);
+            (cmd == CACHE_MEM_SYNC_TO_DEVICE) ? "SYNC_TO_DEVICE" : "SYNC_FROM_DEVICE",
+            (unsigned long long)range.offset, range.length, page_idx, page_off);
 
         while (remaining) {
-            /* ensure we never map past the current page boundary */
+            /* cap chunk to page boundary */
             unsigned int max_chunk = (unsigned int)(PAGE_SIZE - page_off);
             if (max_chunk == 0)
                 max_chunk = PAGE_SIZE;
@@ -236,7 +228,7 @@ static long cache_mem_ioctl(struct file *file, unsigned int cmd, unsigned long a
             if (chunk > PAGE_SIZE)
                 chunk = PAGE_SIZE;
 
-            pr_info("cache_mem_sync: page_idx=%u page_off=%u PAGE_SIZE=%u chunk=%u remaining=%u\n",
+                pr_info("cache_mem_sync: page_idx=%u page_off=%u PAGE_SIZE=%u chunk=%u remaining=%u\n",
                     page_idx, page_off, (unsigned int)PAGE_SIZE, chunk, remaining);
 
             struct page *page = mapping.pages[page_idx];
@@ -247,10 +239,7 @@ static long cache_mem_ioctl(struct file *file, unsigned int cmd, unsigned long a
                         page_idx, page, page_off, chunk, &dma);
 
                 if (mapping.coherent_buf) {
-                    /* compute offset within the coherent buffer for this chunk.
-                     * rel_off = range.offset + offset_within_first_page was used to
-                     * derive page_idx/page_off, so the region-relative offset is
-                     * (page_idx*PAGE_SIZE + page_off) - offset_within_first_page. */
+                    /* compute offset within the coherent buffer for this chunk */
                     unsigned long offset_within_first_page = (unsigned long)mapping.user_addr & ~PAGE_MASK;
                     unsigned long buf_off = (page_idx * PAGE_SIZE + page_off) - offset_within_first_page;
                     void *kbuf = (uint8_t *)mapping.coherent_buf + buf_off;
@@ -289,9 +278,9 @@ static long cache_mem_ioctl(struct file *file, unsigned int cmd, unsigned long a
                 (unsigned long long)range.offset, range.length);
 
         if (ret)
-            pr_err("cache_mem_sync: ioctl operation returned %d\n", ret);
+            pr_err("cache_mem_sync: ioctl returned %d\n", ret);
         else
-            pr_info("cache_mem_sync: ioctl operation completed successfully\n");
+            pr_info("cache_mem_sync: ioctl completed\n");
 
         break;
     }
@@ -341,7 +330,7 @@ static long cache_mem_ioctl(struct file *file, unsigned int cmd, unsigned long a
             page_off = 0;
         }
 
-        /* return sum in the same struct's length field (set as checksum) */
+        /* return checksum in the struct's length field */
         range.length = sum;
         if (copy_to_user((void __user *)arg, &range, sizeof(range)))
             ret = -EFAULT;
