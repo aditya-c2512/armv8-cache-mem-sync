@@ -204,6 +204,81 @@ cache_mem_sync: module loaded
 
 ---
 
+# Using the module
+
+This section shows the basic flow for a userspace driver that uses
+`/dev/cache_mem_sync` to perform explicit cache maintenance around DMA.
+
+1. Build and load the module:
+
+```shell
+make KERNEL_DIR=/lib/modules/$(uname -r)/build
+sudo rmmod cache_mem_sync 2>/dev/null || true
+sudo insmod cache_mem_sync.ko
+```
+
+2. Open the helper device from userspace:
+
+```c
+int fd = open("/dev/cache_mem_sync", O_RDWR);
+if (fd < 0) {
+    perror("open /dev/cache_mem_sync");
+    return -1;
+}
+```
+
+3. Register the DMA buffer region:
+
+```c
+struct cache_mem_sync_register reg;
+reg.user_addr = (uint64_t)(uintptr_t)buf;
+reg.length = (uint32_t)len;
+if (ioctl(fd, CACHE_MEM_SYNC_REGISTER, &reg) < 0) {
+    perror("CACHE_MEM_SYNC_REGISTER");
+}
+```
+
+4. Optionally bind the helper to the NIC device so DMA mappings use the
+correct `struct device`:
+
+```c
+struct cache_mem_sync_set_dev sd = { 0 };
+strncpy(sd.name, device_name, sizeof(sd.name) - 1);
+if (ioctl(fd, CACHE_MEM_SYNC_SET_DEV, &sd) < 0)
+    perror("CACHE_MEM_SYNC_SET_DEV");
+```
+
+5. Before transmitting packet data to the device:
+
+```c
+struct cache_mem_sync_range r = { .offset = 0, .length = (uint32_t)len };
+if (ioctl(fd, CACHE_MEM_SYNC_TO_DEVICE, &r) < 0)
+    perror("CACHE_MEM_SYNC_TO_DEVICE");
+```
+
+6. After the device writes received data into the buffer:
+
+```c
+if (ioctl(fd, CACHE_MEM_SYNC_FROM_DEVICE, &r) < 0)
+    perror("CACHE_MEM_SYNC_FROM_DEVICE");
+```
+
+7. When the buffer is no longer needed, unregister it:
+
+```c
+if (ioctl(fd, CACHE_MEM_SYNC_UNREGISTER) < 0)
+    perror("CACHE_MEM_SYNC_UNREGISTER");
+close(fd);
+```
+
+8. Unload the module when done:
+
+```shell
+sudo rmmod cache_mem_sync
+```
+
+---
+
 # Userspace Test Application
 
 - Build the test program:
@@ -564,7 +639,3 @@ Possible improvements:
 
 GPL-2.0
 
-```
-
-This version reads more like a real systems research repository README: it explains **why the module exists**, **how it fits into DPDK**, and **what the limitations are**, rather than only documenting commands.
-```
