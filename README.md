@@ -1,10 +1,13 @@
 # ARMv8 Cache Memory Synchronisation Helper
+## Directory Sturcture
 ```
 .
 ├── cache_mem_sync.c             # Kernel module implementation
 ├── cache_mem_sync_uapi.h        # Userspace ioctl interface definition
-├── test_simulate_write.c        # Userspace test that exercises SIMULATE_WRITE
-├── test_physical_write_proof.c  # Proof test that writes via /dev/mem
+├── tests/
+    ├── test_simulate_write.c        # Userspace test that exercises SIMULATE_WRITE
+    ├── test_physical_write_proof.c  # Proof test that writes via /dev/mem
+    ├── test_cache_mem_sync_failure
 ├── Makefile                     # Kernel module build file
 └── README.md
 
